@@ -103,45 +103,29 @@ class Sync:
         for failed_ip in failed_ips:
             reserv_ips.remove(failed_ip)
 
-    def check_nginx_conf(self, reserv_ips):
-        print("Checking NGINX configuration on reserv servers...")
-
-        failed_ips = []
-
-        for ip in reserv_ips:
-            try: 
-                command = ["ssh", f"root@{ip}", "nginx", "-t"]
-                result = subprocess.run(command, check=True, capture_output=True, text=True)
-
-                stdout = result.stdout.strip()
-                stderr = result.stderr.strip()
-
-                if "syntax is ok" in stdout and "test is successful" in stdout:
-                    print(f"NGINX configuration is valid on {ip}")
-                elif "test failed" in stderr:
-                    print(f"Failed to validate NGINX configuration on {ip}. Error: {stderr}")
-                    failed_ips.append(ip)
-                else:
-                    print(f"Unexpected output from NGINX on {ip}. Output: {stdout} {stderr}")
-
-            except subprocess.CalledProcessError as e:
-                error_message = e.stderr.strip() if e.stderr else "No error message available"
-                print(f"Error executing command on {ip}. Error: {error_message}")
-                failed_ips.append(ip)
-
-        for failed_ip in failed_ips:
-            reserv_ips.remove(failed_ip)
-
-    def reload_nginx(self, reserv_ips):
-        print("Reloading nginx service...")
+    def update_nginx(self, reserv_ips):
+        print("Checking NGINX configuration and reloading on reserv servers...")
 
         for ip in reserv_ips:
             try:
-                command = ["ssh", f"root@{ip}", "nginx", "-t"]
-                result = subprocess.run(command, check=True, capture_output=True, text=True)
-                print(f"Status: OK for {ip}")
+                # Check NGINX configuration
+                check_command = ["ssh", f"root@{ip}", "nginx", "-t"]
+                check_result = subprocess.run(check_command, capture_output=True, text=True)
+
+                if check_result.returncode == 0:
+                    print(f"NGINX configuration on {ip} is valid.")
+                    # Reload NGINX
+                    reload_command = ["ssh", f"root@{ip}", "nginx", "-s", "reload"]
+                    reload_result = subprocess.run(reload_command, check=True)
+                    print(f"Successfully reloaded NGINX on {ip}.")
+                else:
+                    print(f"NGINX configuration on {ip} is invalid. Skipping reload.")
+                    print(f"Error: {check_result.stderr}")
+
             except subprocess.CalledProcessError as e:
-                print(f"Error reloading nginx on {ip}. Error: {e.stderr.strip()}")
+                print(f"An error occurred on {ip}. Error: {e}")
+            except Exception as e:
+                print(f"An unexpected error occurred on {ip}. Error: {e}")
 
 
 if __name__ == "__main__":
@@ -155,6 +139,4 @@ if __name__ == "__main__":
     sync.sync_to_reserv(domains, reserv_ips)
     sync.change_owner(domains, reserv_ips)
     sync.reload_bind(reserv_ips)
-    sync.check_nginx_conf(reserv_ips)
-    sync.reload_nginx(reserv_ips)
-
+    sync.update_nginx(reserv_ips)
