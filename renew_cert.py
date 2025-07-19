@@ -37,9 +37,9 @@ def stop_bind_on_backups(backup_servers):
 def issue_certificate(main_server, domains):
     """Issues a certificate using acme.sh and returns the TXT records."""
     domain_args = " -d " + " -d ".join(domains)
-    command = f"sudo -u acme /home/acme/bin/acme.sh --issue --dns{domain_args} --keylength 2048 --yes-I-know-dns-manual-mode-enough-go-ahead-please"
+    command = f"/home/acme/bin/acme.sh --issue --dns{domain_args} --keylength 2048 --yes-I-know-dns-manual-mode-enough-go-ahead-please"
 
-    result = run_remote_command(main_server, command)
+    result = run_remote_command(main_server, command, user="acme")
     txt_records = re.findall(r"Domain: '([^']+)'.*?TXT value: '([^']+)'", result.stdout, re.DOTALL)
     if not txt_records:
         logging.error("Could not find TXT records in acme.sh output.")
@@ -86,9 +86,9 @@ def verify_dns_propagation(domains, txt_records):
 def renew_certificate(main_server, domains):
     """Renews the certificate using acme.sh."""
     domain_args = " -d " + " -d ".join(domains)
-    command = f"sudo -u acme /home/acme/bin/acme.sh --renew --dns{domain_args} --keylength 2048 --yes-I-know-dns-manual-mode-enough-go-ahead-please"
+    command = f"/home/acme/bin/acme.sh --renew --dns{domain_args} --keylength 2048 --yes-I-know-dns-manual-mode-enough-go-ahead-please"
 
-    result = run_remote_command(main_server, command)
+    result = run_remote_command(main_server, command, user="acme")
     if "Cert success" not in result.stdout:
         logging.error("Error: Certificate renewal failed.")
         logging.error(f"Stdout: {result.stdout}")
@@ -101,6 +101,14 @@ def reload_nginx(main_server):
     run_remote_command(main_server, "nginx -t")
     run_remote_command(main_server, "nginx -s reload")
 
+def check_bind_status(server):
+    """Checks the status of the BIND service on a server."""
+    try:
+        result = run_remote_command(server, "systemctl is-active bind9.service")
+        return result.stdout.strip() == "active"
+    except subprocess.CalledProcessError:
+        return False
+
 def start_bind_on_backups(backup_servers):
     """Starts the BIND service on backup servers."""
     for server in backup_servers:
@@ -109,13 +117,21 @@ def start_bind_on_backups(backup_servers):
 if __name__ == "__main__":
     try:
         main_server, backup_servers, domains = get_user_input()
+        if not check_bind_status(main_server):
+            logging.error(f"BIND is not running on the main server ({main_server}). Please start it and try again.")
+            exit(1)
+
         stop_bind_on_backups(backup_servers)
-        txt_records = issue_certificate(main_server, domains)
-        update_dns_records(main_server, txt_records)
-        verify_dns_propagation(domains, txt_records)
-        renew_certificate(main_server, domains)
-        reload_nginx(main_server)
-        start_bind_on_backups(backup_servers)
+
+        try:
+            txt_records = issue_certificate(main_server, domains)
+            update_dns_records(main_server, txt_records)
+            verify_dns_propagation(domains, txt_records)
+            renew_certificate(main_server, domains)
+            reload_nginx(main_server)
+        finally:
+            start_bind_on_backups(backup_servers)
+
         logging.info("Certificate renewal process completed successfully!")
     except Exception as e:
         logging.error(f"An unexpected error occurred: {e}")
