@@ -37,7 +37,7 @@ def stop_bind_on_backups(backup_servers):
 def issue_certificate(main_server, domains):
     """Issues a certificate using acme.sh and returns the TXT records."""
     domain_args = " -d " + " -d ".join(domains)
-    command = f"/home/acme/bin/acme.sh --issue --dns{domain_args} --keylength 2048 --yes-I-know-dns-manual-mode-enough-go-ahead-please"
+    command = f" -u acme /home/acme/bin/acme.sh --issue --dns{domain_args} --keylength 2048 --yes-I-know-dns-manual-mode-enough-go-ahead-please"
 
     result = run_remote_command(main_server, command, user="acme")
     txt_records = re.findall(r"Domain: '([^']+)'.*?TXT value: '([^']+)'", result.stdout, re.DOTALL)
@@ -86,7 +86,7 @@ def verify_dns_propagation(domains, txt_records):
 def renew_certificate(main_server, domains):
     """Renews the certificate using acme.sh."""
     domain_args = " -d " + " -d ".join(domains)
-    command = f"/home/acme/bin/acme.sh --renew --dns{domain_args} --keylength 2048 --yes-I-know-dns-manual-mode-enough-go-ahead-please"
+    command = f" -u acme /home/acme/bin/acme.sh --renew --dns{domain_args} --keylength 2048 --yes-I-know-dns-manual-mode-enough-go-ahead-please"
 
     result = run_remote_command(main_server, command, user="acme")
     if "Cert success" not in result.stdout:
